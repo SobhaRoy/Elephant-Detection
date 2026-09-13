@@ -1,0 +1,115 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>EleGuard AI - Backend Integration Tester</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0f172a; color: #f8fafc; padding: 24px; }
+        .card { background: #1e293b; border-radius: 8px; padding: 18px; margin-bottom: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3); }
+        .alert-box { padding: 16px; border-radius: 6px; font-weight: bold; margin-bottom: 12px; display: none; }
+        .alert-active { display: block; background: #dc2626; color: white; animation: pulse 1s infinite alternate; }
+        @keyframes pulse { from { opacity: 0.8; } to { opacity: 1; transform: scale(1.01); } }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #334155; }
+        th { background: #0f172a; color: #38bdf8; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; background: #0284c7; }
+    </style>
+</head>
+<body>
+    <h1>EleGuard AI - Live Integration Monitor (Member 2 Testbed)</h1>
+    
+    <div id="flashBanner" class="alert-box">
+        EMERGENCY ALERT: <span id="alertMsg">No active threats</span>
+    </div>
+
+    <div class="card">
+        <h3>System Telemetry (<span id="sysStatus" class="badge">Checking...</span>)</h3>
+        <p>Database: <span id="dbStatus">--</span> | Latest Sighting ID: <span id="latestId">None</span></p>
+    </div>
+
+    <div class="card">
+        <h3>Recent Sightings (Live from SQLite)</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Time</th>
+                    <th>GPS Coordinates</th>
+                    <th>Count</th>
+                    <th>Confidence</th>
+                    <th>Source</th>
+                </tr>
+            </thead>
+            <tbody id="sightingsTable">
+                <tr><td colspan="6">Loading database rows...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        const API_BASE = "http://127.0.0.1:8000";
+
+        // 1. WebSocket Live Stream Test
+        const socket = new WebSocket("ws://127.0.0.1:8000/ws/alerts");
+        socket.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            const banner = document.getElementById("flashBanner");
+            const msg = document.getElementById("alertMsg");
+            
+            banner.className = "alert-box alert-active";
+            msg.innerText = `[${data.risk_level || data.level}] ${data.count || ''} elephant(s) detected!`;
+            setTimeout(() => { banner.className = "alert-box"; }, 4000);
+            fetchLatest();
+            fetchHistory();
+        };
+
+        // 2. Poll Status
+        async function fetchStatus() {
+            try {
+                const res = await fetch(`${API_BASE}/status`);
+                const data = await res.json();
+                document.getElementById("sysStatus").innerText = data.backend.toUpperCase();
+                document.getElementById("dbStatus").innerText = data.database;
+            } catch (e) {
+                document.getElementById("sysStatus").innerText = "OFFLINE";
+            }
+        }
+
+        // 3. Fetch Latest Sighting
+        async function fetchLatest() {
+            try {
+                const res = await fetch(`${API_BASE}/latest`);
+                const data = await res.json();
+                document.getElementById("latestId").innerText = data.id || "None";
+            } catch (e) {}
+        }
+
+        // 4. Fetch History Table
+        async function fetchHistory() {
+            try {
+                const res = await fetch(`${API_BASE}/detections?limit=6`);
+                const records = await res.json();
+                const tbody = document.getElementById("sightingsTable");
+                tbody.innerHTML = "";
+                records.forEach(r => {
+                    tbody.innerHTML += `
+                        <tr>
+                            <td>${r.id}</td>
+                            <td>${new Date(r.timestamp).toLocaleTimeString()}</td>
+                            <td>${r.latitude.toFixed(4)}, ${r.longitude.toFixed(4)}</td>
+                            <td>${r.elephant_count}</td>
+                            <td>${(r.confidence * 100).toFixed(1)}%</td>
+                            <td><span class="badge">${r.source}</span></td>
+                        </tr>
+                    `;
+                });
+            } catch (e) {}
+        }
+
+        fetchStatus();
+        fetchLatest();
+        fetchHistory();
+        setInterval(fetchStatus, 5000);
+    </script>
+</body>
+</html>
