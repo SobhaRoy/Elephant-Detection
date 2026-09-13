@@ -1,7 +1,7 @@
 from typing import List, Dict, Any
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 
 from .database import get_db
 from .models import (
@@ -20,11 +20,25 @@ system_alert_state = {
     "last_message": "Monitoring active"
 }
 
+# Known sensitive transport/railway collision corridor coordinates (Lat/Lon bounds)
+CORRIDOR_ZONES = [
+    {"name": "Sevoke-Gulma Rail Corridor", "min_lat": 26.710, "max_lat": 26.745, "min_lon": 88.380, "max_lon": 88.420}
+]
+
+def evaluate_risk(lat: float, lon: float, count: int) -> str:
+    """Assess whether elephant herd is within high-risk rail/settlement buffers."""
+    for zone in CORRIDOR_ZONES:
+        if zone["min_lat"] <= lat <= zone["max_lat"] and zone["min_lon"] <= lon <= zone["max_lon"]:
+            return "CRITICAL_RAIL_CORRIDOR"
+    if count >= 3:
+        return "HIGH_HERD_RISK"
+    return "STANDARD_MONITORING"
+
 @router.get("/", summary="Health Check")
 def health_check() -> Dict[str, str]:
     return {
         "message": "EleGuard AI Backend Running",
-        "version": "1.0"
+        "version": "1.1"
     }
 
 @router.post("/detect", summary="Ingest Elephant Detection")
@@ -35,6 +49,8 @@ def ingest_detection(payload: DetectionCreate, db: Session = Depends(get_db)) ->
             "alert": False,
             "message": f"Confidence {payload.confidence:.2f} is below the 0.50 operational threshold."
         }
+
+    risk_zone = evaluate_risk(payload.latitude, payload.longitude, payload.elephant_count)
 
     record = DetectionRecord(
         timestamp=payload.timestamp,
@@ -49,14 +65,15 @@ def ingest_detection(payload: DetectionCreate, db: Session = Depends(get_db)) ->
     db.refresh(record)
 
     system_alert_state["active"] = True
-    system_alert_state["last_level"] = "HIGH"
+    system_alert_state["last_level"] = "HIGH" if risk_zone != "STANDARD_MONITORING" else "MEDIUM"
     system_alert_state["last_message"] = (
-        f"{payload.elephant_count} elephant(s) detected with {payload.confidence*100:.1f}% confidence."
+        f"[{risk_zone}] {payload.elephant_count} elephant(s) detected ({payload.confidence*100:.1f}% confidence)."
     )
 
     return {
         "status": "success",
         "alert": True,
+        "risk_level": risk_zone,
         "message": "Elephant detected and stored.",
         "detection_id": record.id
     }
@@ -109,4 +126,18 @@ def get_status(db: Session = Depends(get_db)) -> Dict[str, Any]:
         "camera": "active",
         "alert_active": system_alert_state["active"],
         "alert_message": system_alert_state["last_message"]
+    }
+
+@router.get("/analytics/summary", summary="Corridor Risk Analytics")
+def get_analytics(db: Session = Depends(get_db)) -> Dict[str, Any]:
+    total_sightings = db.query(func.count(DetectionRecord.id)).scalar() or 0
+    total_elephants = db.query(func.sum(DetectionRecord.elephant_count)).scalar() or 0
+    avg_conf = db.query(func.avg(DetectionRecord.confidence)).scalar() or 0.0
+    max_herd = db.query(func.max(DetectionRecord.elephant_count)).scalar() or 0
+
+    return {
+        "total_detections": total_sightings,
+        "total_elephants_logged": total_elephants,
+        "average_confidence": round(float(avg_conf), 3),
+        "peak_herd_size": max_herd
     }
