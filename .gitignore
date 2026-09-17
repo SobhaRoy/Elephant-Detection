@@ -1,6 +1,22 @@
+﻿# Virtual Environment
 venv/
+env/
+ENV/
+
+# Python Cache
 __pycache__/
-*.pyc
-database/*.db
-.DS_Store
-*.pt
+*.py[cod]
+*$py.class
+
+# Database
+*.db
+*.sqlite3
+
+# Large Datasets & Training Runs
+runs/
+dataset/
+
+# Local tests & IDE
+test_detect.py
+.vscode/
+.idea/

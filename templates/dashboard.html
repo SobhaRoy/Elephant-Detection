@@ -1,0 +1,191 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EleGuard AI - Tactical Command</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    :root {
+      --bg: #0b111e;
+      --card: #151f32;
+      --card-border: #22324e;
+      --accent: #00d26a;
+      --danger: #ff3860;
+      --text: #f0f4f8;
+      --text-muted: #8a9bb2;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background: var(--bg); color: var(--text); padding: 16px; }
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    .title { font-size: 1.4rem; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+    .controls { display: flex; gap: 10px; }
+    .btn { background: var(--card); border: 1px solid var(--card-border); color: var(--text); padding: 8px 14px; border-radius: 6px; cursor: pointer; font-weight: 600; }
+    .btn-active { background: #1976d2; color: #fff; border-color: #42a5f5; }
+    .btn-danger { background: var(--danger); color: #fff; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .card { background: var(--card); border: 1px solid var(--card-border); border-radius: 8px; padding: 16px; }
+    .metrics { display: flex; justify-content: space-around; margin-bottom: 16px; text-align: center; }
+    .metric-val { font-size: 2rem; font-weight: 800; color: #42a5f5; margin-top: 4px; }
+    #map { height: 420px; border-radius: 6px; }
+    .table-container { max-height: 380px; overflow-y: auto; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 0.85rem; }
+    th, td { padding: 10px; text-align: left; border-bottom: 1px solid var(--card-border); }
+    th { color: var(--text-muted); font-weight: 600; }
+    .badge { padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 0.75rem; text-align: center; display: inline-block; }
+    .badge-night { background: #5c6bc0; color: #fff; }
+    .badge-day { background: #ff7043; color: #fff; }
+    .badge-herd { background: var(--danger); color: #fff; min-width: 24px; }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div class="title">🐘 EleGuard AI — Tactical Surveillance Command</div>
+    <div class="controls">
+      <button id="sirenToggle" class="btn btn-active" onclick="toggleSiren()">🔊 Siren: ON</button>
+      <button class="btn btn-danger" onclick="triggerSirenSound()">🚨 Test Siren</button>
+      <div class="btn" style="background:#004d40; color:#4db6ac;">🟢 BACKEND ONLINE</div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h3 style="margin-bottom: 12px;">Corridor GIS Map (Sevoke–Gulma Belt)</h3>
+      <div id="map"></div>
+    </div>
+
+    <div class="card">
+      <div class="metrics">
+        <div>
+          <div style="color:var(--text-muted); font-size:0.85rem;">Total Sightings</div>
+          <div id="totalCount" class="metric-val">--</div>
+        </div>
+        <div>
+          <div style="color:var(--text-muted); font-size:0.85rem;">Peak Herd Size</div>
+          <div id="peakHerd" class="metric-val">--</div>
+        </div>
+      </div>
+
+      <h3 style="margin-bottom: 12px;">Live Incident Log</h3>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Time (Local)</th>
+              <th>GPS</th>
+              <th>Mode</th>
+              <th>Herd</th>
+            </tr>
+          </thead>
+          <tbody id="logBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    let sirenEnabled = true;
+    let audioCtx = null;
+
+    function initAudio() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+    }
+
+    function toggleSiren() {
+      initAudio();
+      sirenEnabled = !sirenEnabled;
+      const btn = document.getElementById('sirenToggle');
+      btn.innerText = sirenEnabled ? "🔊 Siren: ON" : "🔇 Siren: OFF";
+      btn.className = sirenEnabled ? "btn btn-active" : "btn";
+    }
+
+    function triggerSirenSound() {
+      initAudio();
+      if (!sirenEnabled || !audioCtx) return;
+
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+
+      osc.type = "sawtooth";
+      osc.frequency.setValueAtTime(900, audioCtx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(450, audioCtx.currentTime + 0.3);
+      osc.frequency.exponentialRampToValueAtTime(900, audioCtx.currentTime + 0.6);
+      osc.frequency.exponentialRampToValueAtTime(450, audioCtx.currentTime + 0.9);
+
+      gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+      gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 1.1);
+
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+
+      osc.start();
+      osc.stop(audioCtx.currentTime + 1.1);
+    }
+
+    const map = L.map('map').setView([26.7271, 88.3953], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(map);
+
+    async function fetchUpdates() {
+      try {
+        const res = await fetch('/incidents');
+        if (!res.ok) return;
+        const data = await res.json();
+
+        document.getElementById('totalCount').innerText = data.length;
+        const maxHerd = data.reduce((m, item) => Math.max(m, item.elephant_count || 1), 0);
+        document.getElementById('peakHerd').innerText = maxHerd;
+
+        const tbody = document.getElementById('logBody');
+        tbody.innerHTML = '';
+
+        data.slice(0, 15).forEach((item) => {
+          const row = document.createElement('tr');
+          
+          let dateObj;
+          if (item.timestamp) {
+            dateObj = new Date(item.timestamp.endsWith('Z') ? item.timestamp : item.timestamp + 'Z');
+          } else {
+            dateObj = new Date();
+          }
+          const timeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+          const isNight = item.source && item.source.includes('night');
+          const modeBadge = isNight 
+            ? `<span class="badge badge-night">NIGHT IR</span>` 
+            : `<span class="badge badge-day">DAY</span>`;
+
+          row.innerHTML = `
+            <td><strong>${timeStr}</strong></td>
+            <td>${item.latitude.toFixed(3)}, ${item.longitude.toFixed(3)}</td>
+            <td>${modeBadge}</td>
+            <td><span class="badge badge-herd">${item.elephant_count}</span></td>
+          `;
+          tbody.appendChild(row);
+        });
+
+      } catch (err) {
+        console.error("Sync error:", err);
+      }
+    }
+
+    window.addEventListener('click', initAudio, { once: true });
+    setInterval(fetchUpdates, 3000);
+    fetchUpdates();
+
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const socket = new WebSocket(`${protocol}//${window.location.host}/ws`);
+    
+    socket.onmessage = function(event) {
+      triggerSirenSound();
+      fetchUpdates();
+    };
+  </script>
+</body>
+</html>
